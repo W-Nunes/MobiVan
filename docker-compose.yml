@@ -1,0 +1,134 @@
+# docker-compose.yml
+# Este arquivo orquestra todos os contêineres do nosso projeto.
+# Para iniciar tudo, navegue até o diretório deste arquivo no terminal e execute:
+# docker-compose up --build
+
+version: '3.8'
+
+services:
+  # --- BANCOS DE DADOS ---
+  postgres:
+    image: postgres:13-alpine
+    container_name: van_postgres_db
+    environment:
+      POSTGRES_USER: vanuser
+      POSTGRES_PASSWORD: vanpassword
+      POSTGRES_DB: van_management_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:5.0
+    container_name: van_mongo_db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: vanmongouser
+      MONGO_INITDB_ROOT_PASSWORD: vanmongopassword
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  # --- MICROSSERVIÇOS PYTHON ---
+  routes-service:
+    build:
+      context: ./backend/python/routes_service
+    container_name: van_routes_service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/python/routes_service:/app
+    depends_on:
+      - postgres
+    restart: on-failure
+
+  trips-service:
+    build:
+      context: ./backend/python/trips_service
+    container_name: van_trips_service
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend/python/trips_service:/app
+    depends_on:
+      - postgres
+    restart: on-failure
+
+  routing-service:
+    build:
+      context: ./backend/python/routing_service
+    container_name: van_routing_service
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./backend/python/routing_service:/app
+    restart: on-failure
+
+  payments-service:
+    build:
+      context: ./backend/python/payments_service
+    container_name: van_payments_service
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./backend/python/payments_service:/app
+    depends_on:
+      - postgres
+    restart: on-failure
+
+  # --- MICROSSERVIÇOS NODE.JS ---
+  api-gateway:
+    build:
+      context: ./backend/nodejs/api_gateway
+    container_name: van_api_gateway
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/nodejs/api_gateway:/usr/src/app
+      - /usr/src/app/node_modules # Evita que o node_modules local sobrescreva o do contêiner
+    restart: on-failure
+
+  auth-service:
+    build:
+      context: ./backend/nodejs/auth_service
+    container_name: van_auth_service
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./backend/nodejs/auth_service:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - postgres
+    restart: on-failure
+
+  geolocation-service:
+    build:
+      context: ./backend/nodejs/geolocation_service
+    container_name: van_geolocation_service
+    ports:
+      - "3002:3000" # Porta do WebSocket
+    volumes:
+      - ./backend/nodejs/geolocation_service:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - mongo
+    restart: on-failure
+
+  notifications-service:
+    build:
+      context: ./backend/nodejs/notifications_service
+    container_name: van_notifications_service
+    ports:
+      - "3003:3000"
+    volumes:
+      - ./backend/nodejs/notifications_service:/usr/src/app
+      - /usr/src/app/node_modules
+    restart: on-failure
+
+# --- VOLUMES PERSISTENTES ---
+volumes:
+  postgres_data:
+  mongo_data:
