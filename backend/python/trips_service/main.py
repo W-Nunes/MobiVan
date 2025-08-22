@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from datetime import date
+from typing import List
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -35,6 +36,11 @@ class ConfirmationUpdate(BaseModel):
     route_id: int
     status: str # Espera-se 'CONFIRMED' ou 'CANCELLED'
 
+class ConfirmationDetails(BaseModel):
+    passenger_id: int
+    passenger_name: str
+    status: str
+
 # --- ROTAS ---
 
 @app.get("/")
@@ -52,8 +58,6 @@ def confirm_presence(confirmation: ConfirmationUpdate):
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Passo 1: Encontrar ou criar a viagem para a rota de hoje.
-            # A cláusula ON CONFLICT garante que não criamos viagens duplicadas.
             cur.execute("""
                 INSERT INTO trips (route_id, trip_date, tenant_id)
                 VALUES (%s, %s, %s)
@@ -65,7 +69,6 @@ def confirm_presence(confirmation: ConfirmationUpdate):
                 raise HTTPException(status_code=500, detail="Não foi possível encontrar ou criar a viagem para hoje.")
             trip_id = trip['id']
 
-            # Passo 2: Inserir ou atualizar a confirmação do passageiro.
             cur.execute("""
                 INSERT INTO trip_confirmations (trip_id, passenger_id, status, tenant_id, confirmed_at)
                 VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
@@ -76,6 +79,50 @@ def confirm_presence(confirmation: ConfirmationUpdate):
             
             conn.commit()
             return {"message": f"Presença atualizada para o estado '{confirmation.status}' com sucesso."}
+
+    except psycopg2.Error as e:
+        print(f"Erro na base de dados: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+    finally:
+        if conn:
+            conn.close()
+
+@app.get("/trips/today/{route_id}/confirmations", response_model=List[ConfirmationDetails])
+def get_today_confirmations(route_id: int):
+    """Obtém a lista de confirmações de passageiros para uma rota no dia de hoje."""
+    tenant_id = "cliente_alpha"
+    today = date.today()
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Primeiro, encontramos a viagem de hoje para esta rota
+            cur.execute(
+                "SELECT id FROM trips WHERE route_id = %s AND trip_date = %s AND tenant_id = %s",
+                (route_id, today, tenant_id)
+            )
+            trip = cur.fetchone()
+            if not trip:
+                # Se não houver viagem, significa que ninguém confirmou ainda, então retornamos uma lista vazia.
+                return []
+            
+            trip_id = trip['id']
+
+            # Agora, obtemos todos os passageiros da rota e o seu estado de confirmação
+            cur.execute("""
+                SELECT
+                    u.id as passenger_id,
+                    u.name as passenger_name,
+                    COALESCE(tc.status, 'PENDING') as status
+                FROM users u
+                JOIN passenger_routes pr ON u.id = pr.passenger_id
+                LEFT JOIN trip_confirmations tc ON u.id = tc.passenger_id AND tc.trip_id = %s
+                WHERE pr.route_id = %s AND u.role = 'PASSAGEIRO' AND u.tenant_id = %s
+            """, (trip_id, route_id, tenant_id))
+
+            confirmations = cur.fetchall()
+            return confirmations
 
     except psycopg2.Error as e:
         print(f"Erro na base de dados: {e}")
