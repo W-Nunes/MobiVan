@@ -5,19 +5,18 @@ from pydantic import BaseModel
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from typing import List # Importar List para a resposta
 
-# Carregar variáveis de ambiente (útil para desenvolvimento)
+# Carregar variáveis de ambiente
 load_dotenv()
 
 app = FastAPI()
 
 # --- Configuração da Base de Dados ---
-# Usamos variáveis de ambiente para as credenciais, uma boa prática.
-# O Docker Compose irá passar estas variáveis para nós.
 DB_NAME = os.getenv("POSTGRES_DB", "van_management_db")
 DB_USER = os.getenv("POSTGRES_USER", "vanuser")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "vanpassword")
-DB_HOST = os.getenv("DB_HOST", "postgres") # 'postgres' é o nome do serviço no Docker
+DB_HOST = os.getenv("DB_HOST", "postgres")
 
 DATABASE_URL = f"dbname='{DB_NAME}' user='{DB_USER}' password='{DB_PASSWORD}' host='{DB_HOST}'"
 
@@ -31,7 +30,6 @@ def get_db_connection():
         raise
 
 # --- Modelos de Dados (Pydantic) ---
-# Pydantic ajuda a validar os dados que recebemos nas requisições.
 class RouteCreate(BaseModel):
     name: str
     driver_id: int
@@ -41,6 +39,17 @@ class RouteResponse(BaseModel):
     name: str
     driver_id: int
     tenant_id: str
+
+class PassengerAdd(BaseModel):
+    passenger_id: int
+
+class PassengerResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+
+class RouteDetailResponse(RouteResponse):
+    passengers: List[PassengerResponse] = []
 
 # --- ROTAS ---
 
@@ -52,22 +61,18 @@ def read_root():
 @app.post("/routes", response_model=RouteResponse)
 def create_route(route: RouteCreate):
     """Cria uma nova rota na base de dados."""
-    tenant_id = "cliente_alpha" # O nosso tenant_id fixo por enquanto
-
+    tenant_id = "cliente_alpha"
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Primeiro, verificamos se o driver_id corresponde a um utilizador com a função 'MOTORISTA'
             cur.execute(
                 "SELECT id FROM users WHERE id = %s AND role = 'MOTORISTA' AND tenant_id = %s",
                 (route.driver_id, tenant_id)
             )
-            driver = cur.fetchone()
-            if not driver:
+            if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Motorista não encontrado ou inválido.")
 
-            # Se o motorista for válido, inserimos a nova rota
             cur.execute(
                 "INSERT INTO routes (name, driver_id, tenant_id) VALUES (%s, %s, %s) RETURNING id, name, driver_id, tenant_id",
                 (route.name, route.driver_id, tenant_id)
@@ -82,3 +87,42 @@ def create_route(route: RouteCreate):
         if conn:
             conn.close()
 
+@app.post("/routes/{route_id}/passengers", status_code=201)
+def add_passenger_to_route(route_id: int, passenger: PassengerAdd):
+    """Adiciona um passageiro a uma rota existente."""
+    tenant_id = "cliente_alpha"
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Validar se o passageiro existe e tem o papel correto
+            cur.execute(
+                "SELECT id FROM users WHERE id = %s AND role = 'PASSAGEIRO' AND tenant_id = %s",
+                (passenger.passenger_id, tenant_id)
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Passageiro não encontrado ou inválido.")
+
+            # Validar se a rota existe
+            cur.execute(
+                "SELECT id FROM routes WHERE id = %s AND tenant_id = %s",
+                (route_id, tenant_id)
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Rota não encontrada.")
+
+            # Inserir a associação
+            cur.execute(
+                "INSERT INTO passenger_routes (route_id, passenger_id, tenant_id) VALUES (%s, %s, %s)",
+                (route_id, passenger.passenger_id, tenant_id)
+            )
+            conn.commit()
+            return {"message": "Passageiro adicionado à rota com sucesso."}
+    except psycopg2.IntegrityError: # Acontece se tentarmos adicionar o mesmo passageiro duas vezes
+        raise HTTPException(status_code=409, detail="Este passageiro já está nesta rota.")
+    except psycopg2.Error as e:
+        print(f"Erro na base de dados: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+    finally:
+        if conn:
+            conn.close()
