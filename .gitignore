@@ -1,0 +1,50 @@
+# .gitignore
+# Este arquivo diz ao Git quais arquivos e pastas ignorar.
+# Coloque este arquivo na raiz do seu projeto (C:\van_project\).
+
+# Dependências do Node.js
+# Esta é a pasta mais importante a ser ignorada. Ela pode conter milhares de arquivos.
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Dependências e arquivos de cache do Python
+# Pastas de ambiente virtual
+venv/
+env/
+.venv/
+.env/
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de ambiente
+# NUNCA cometa arquivos .env, pois eles contêm senhas e chaves de API!
+.env
+.env.*
+
+# Arquivos de log
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arquivos gerados pelo sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de configuração de IDEs
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Arquivos de build e distribuição
+/build/
+/dist/
