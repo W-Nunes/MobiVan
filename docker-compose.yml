@@ -1,7 +1,5 @@
 # docker-compose.yml
-# Este arquivo orquestra todos os contêineres do nosso projeto.
-# Para iniciar tudo, navegue até o diretório deste arquivo no terminal e execute:
-# docker-compose up --build
+# Versão ATUALIZADA com healthcheck para o PostgreSQL
 
 version: '3.8'
 
@@ -19,6 +17,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    # --- NOVO: HEALTHCHECK ---
+    # Isto verifica se a base de dados está realmente pronta para aceitar ligações.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vanuser -d van_management_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   mongo:
     image: mongo:5.0
@@ -31,6 +36,12 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
+    # Pode adicionar um healthcheck para o Mongo também se desejar
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # --- MICROSSERVIÇOS PYTHON ---
   routes-service:
@@ -42,7 +53,9 @@ services:
     volumes:
       - ./backend/python/routes_service:/app
     depends_on:
-      - postgres
+      # --- ALTERADO: Espera pela saúde do serviço ---
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   trips-service:
@@ -54,7 +67,8 @@ services:
     volumes:
       - ./backend/python/trips_service:/app
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   routing-service:
@@ -76,7 +90,8 @@ services:
     volumes:
       - ./backend/python/payments_service:/app
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   # --- MICROSSERVIÇOS NODE.JS ---
@@ -88,7 +103,7 @@ services:
       - "3000:3000"
     volumes:
       - ./backend/nodejs/api_gateway:/usr/src/app
-      - /usr/src/app/node_modules # Evita que o node_modules local sobrescreva o do contêiner
+      - /usr/src/app/node_modules
     restart: on-failure
 
   auth-service:
@@ -101,7 +116,8 @@ services:
       - ./backend/nodejs/auth_service:/usr/src/app
       - /usr/src/app/node_modules
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   geolocation-service:
@@ -109,12 +125,13 @@ services:
       context: ./backend/nodejs/geolocation_service
     container_name: van_geolocation_service
     ports:
-      - "3002:3000" # Porta do WebSocket
+      - "3002:3000"
     volumes:
       - ./backend/nodejs/geolocation_service:/usr/src/app
       - /usr/src/app/node_modules
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     restart: on-failure
 
   notifications-service:
