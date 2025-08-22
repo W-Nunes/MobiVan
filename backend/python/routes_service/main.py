@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
-from typing import List # Importar List para a resposta
+from typing import List
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -95,7 +95,6 @@ def add_passenger_to_route(route_id: int, passenger: PassengerAdd):
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Validar se o passageiro existe e tem o papel correto
             cur.execute(
                 "SELECT id FROM users WHERE id = %s AND role = 'PASSAGEIRO' AND tenant_id = %s",
                 (passenger.passenger_id, tenant_id)
@@ -103,7 +102,6 @@ def add_passenger_to_route(route_id: int, passenger: PassengerAdd):
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Passageiro não encontrado ou inválido.")
 
-            # Validar se a rota existe
             cur.execute(
                 "SELECT id FROM routes WHERE id = %s AND tenant_id = %s",
                 (route_id, tenant_id)
@@ -111,15 +109,50 @@ def add_passenger_to_route(route_id: int, passenger: PassengerAdd):
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Rota não encontrada.")
 
-            # Inserir a associação
             cur.execute(
                 "INSERT INTO passenger_routes (route_id, passenger_id, tenant_id) VALUES (%s, %s, %s)",
                 (route_id, passenger.passenger_id, tenant_id)
             )
             conn.commit()
             return {"message": "Passageiro adicionado à rota com sucesso."}
-    except psycopg2.IntegrityError: # Acontece se tentarmos adicionar o mesmo passageiro duas vezes
+    except psycopg2.IntegrityError:
         raise HTTPException(status_code=409, detail="Este passageiro já está nesta rota.")
+    except psycopg2.Error as e:
+        print(f"Erro na base de dados: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+    finally:
+        if conn:
+            conn.close()
+
+@app.get("/routes/{route_id}", response_model=RouteDetailResponse)
+def get_route_details(route_id: int):
+    """Obtém os detalhes de uma rota, incluindo a lista de passageiros."""
+    tenant_id = "cliente_alpha"
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 1. Obter os detalhes da rota
+            cur.execute(
+                "SELECT * FROM routes WHERE id = %s AND tenant_id = %s",
+                (route_id, tenant_id)
+            )
+            route_details = cur.fetchone()
+            if not route_details:
+                raise HTTPException(status_code=404, detail="Rota não encontrada.")
+
+            # 2. Obter a lista de passageiros associados a essa rota
+            cur.execute("""
+                SELECT u.id, u.name, u.email
+                FROM users u
+                JOIN passenger_routes pr ON u.id = pr.passenger_id
+                WHERE pr.route_id = %s AND pr.tenant_id = %s
+            """, (route_id, tenant_id))
+            passengers = cur.fetchall()
+
+            # 3. Combinar os resultados
+            route_details["passengers"] = passengers
+            return route_details
     except psycopg2.Error as e:
         print(f"Erro na base de dados: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor.")
