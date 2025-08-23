@@ -55,12 +55,32 @@ class RouteDetailResponse(RouteResponse):
 
 @app.get("/")
 def read_root():
-    """Rota raiz para verificar se o serviço está no ar."""
     return {"message": "Olá, Mundo! Este é o Serviço de Rotas."}
+
+@app.get("/routes", response_model=List[RouteResponse])
+def get_all_routes():
+    """Obtém uma lista de todas as rotas."""
+    tenant_id = "cliente_alpha"
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM routes WHERE tenant_id = %s",
+                (tenant_id,)
+            )
+            routes = cur.fetchall()
+            return routes
+    except psycopg2.Error as e:
+        print(f"Erro na base de dados: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+    finally:
+        if conn:
+            conn.close()
 
 @app.post("/routes", response_model=RouteResponse)
 def create_route(route: RouteCreate):
-    """Cria uma nova rota na base de dados."""
+    # (Código existente - sem alterações)
     tenant_id = "cliente_alpha"
     conn = None
     try:
@@ -89,7 +109,7 @@ def create_route(route: RouteCreate):
 
 @app.post("/routes/{route_id}/passengers", status_code=201)
 def add_passenger_to_route(route_id: int, passenger: PassengerAdd):
-    """Adiciona um passageiro a uma rota existente."""
+    # (Código existente - sem alterações)
     tenant_id = "cliente_alpha"
     conn = None
     try:
@@ -126,13 +146,12 @@ def add_passenger_to_route(route_id: int, passenger: PassengerAdd):
 
 @app.get("/routes/{route_id}", response_model=RouteDetailResponse)
 def get_route_details(route_id: int):
-    """Obtém os detalhes de uma rota, incluindo a lista de passageiros."""
+    # (Código existente - sem alterações)
     tenant_id = "cliente_alpha"
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # 1. Obter os detalhes da rota
             cur.execute(
                 "SELECT * FROM routes WHERE id = %s AND tenant_id = %s",
                 (route_id, tenant_id)
@@ -141,7 +160,6 @@ def get_route_details(route_id: int):
             if not route_details:
                 raise HTTPException(status_code=404, detail="Rota não encontrada.")
 
-            # 2. Obter a lista de passageiros associados a essa rota
             cur.execute("""
                 SELECT u.id, u.name, u.email
                 FROM users u
@@ -150,7 +168,6 @@ def get_route_details(route_id: int):
             """, (route_id, tenant_id))
             passengers = cur.fetchall()
 
-            # 3. Combinar os resultados
             route_details["passengers"] = passengers
             return route_details
     except psycopg2.Error as e:
