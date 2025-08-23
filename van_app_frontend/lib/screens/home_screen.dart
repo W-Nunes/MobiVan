@@ -14,10 +14,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String? _userRole;
+  int? _userId;
   final ApiService _apiService = ApiService();
 
-  // Variável para guardar o resultado da nossa chamada à API
   Future<List<dynamic>>? _routesFuture;
+  Future<Map<String, dynamic>>? _myRouteFuture;
 
   @override
   void initState() {
@@ -29,31 +30,34 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     String? role;
+    int? userId;
 
     if (token != null) {
       Map<String, dynamic> decodedToken = JwtDecoder.decode(token);
       role = decodedToken['role'];
+      userId = decodedToken['userId'];
     }
 
-    // Atualizamos o estado e, se for admin, iniciamos a chamada à API
     setState(() {
       _userRole = role ?? 'desconhecido';
+      _userId = userId;
+
       if (_userRole == 'SUPER_ADMIN') {
         _routesFuture = _apiService.getRoutes();
+      } else if (_userRole == 'PASSAGEIRO' && _userId != null) {
+        _myRouteFuture = _apiService.getMyRoute(_userId!);
       }
     });
   }
 
-  // --- PAINEL DO ADMIN ATUALIZADO ---
   Widget _buildAdminDashboard() {
+    // (Código existente - sem alterações)
     return FutureBuilder<List<dynamic>>(
-      // Usamos a nossa variável de estado aqui
       future: _routesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
-          // Mostra o erro detalhado para depuração
           return Center(
             child: Text('Erro ao carregar rotas: ${snapshot.error}'),
           );
@@ -87,13 +91,109 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // --- PAINEL DO PASSAGEIRO ATUALIZADO ---
   Widget _buildPassengerDashboard() {
-    return const Center(
-      child: Text('Painel do Passageiro', style: TextStyle(fontSize: 24)),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _myRouteFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(child: Text('Erro: ${snapshot.error}'));
+        } else if (!snapshot.hasData) {
+          return const Center(
+            child: Text('Não está associado a nenhuma rota.'),
+          );
+        }
+
+        final route = snapshot.data!;
+        final routeId = route['id'];
+
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'A sua Rota',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        route['name'],
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Motorista ID: ${route['driver_id']}'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Text(
+                'Confirmar presença para hoje:',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.check_circle),
+                label: const Text('CONFIRMAR IDA'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                onPressed: () => _handleConfirmation(routeId, 'CONFIRMED'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.cancel),
+                label: const Text('NÃO VOU'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                onPressed: () => _handleConfirmation(routeId, 'CANCELLED'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
+  void _handleConfirmation(int routeId, String status) async {
+    try {
+      await _apiService.confirmPresence(_userId!, routeId, status);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Presença ${status == 'CONFIRMED' ? 'confirmada' : 'cancelada'} com sucesso!',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao atualizar presença: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _buildDashboardByRole() {
+    // (Código existente - sem alterações)
     if (_userRole == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -111,6 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // (Código existente - sem alterações)
     return Scaffold(
       appBar: AppBar(
         title: Text('Painel Principal (${_userRole ?? ''})'),
@@ -121,14 +222,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _userRole == 'SUPER_ADMIN'
               ? FloatingActionButton(
                 onPressed: () async {
-                  // Esta é a lógica que faz o botão funcionar
                   final result = await Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (context) => const CreateRouteScreen(),
                     ),
                   );
-
-                  // Se voltarmos com 'true', atualizamos a lista de rotas
                   if (result == true) {
                     setState(() {
                       _routesFuture = _apiService.getRoutes();

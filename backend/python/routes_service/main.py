@@ -59,7 +59,7 @@ def read_root():
 
 @app.get("/routes", response_model=List[RouteResponse])
 def get_all_routes():
-    """Obtém uma lista de todas as rotas."""
+    # (Código existente - sem alterações)
     tenant_id = "cliente_alpha"
     conn = None
     try:
@@ -170,6 +170,34 @@ def get_route_details(route_id: int):
 
             route_details["passengers"] = passengers
             return route_details
+    except psycopg2.Error as e:
+        print(f"Erro na base de dados: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+    finally:
+        if conn:
+            conn.close()
+
+# --- NOVA ROTA ---
+@app.get("/passengers/{passenger_id}/route", response_model=RouteResponse)
+def get_passenger_route(passenger_id: int):
+    """Obtém a rota principal de um passageiro."""
+    tenant_id = "cliente_alpha"
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Fazemos um JOIN para encontrar a rota a partir do ID do passageiro
+            cur.execute("""
+                SELECT r.id, r.name, r.driver_id, r.tenant_id
+                FROM routes r
+                JOIN passenger_routes pr ON r.id = pr.route_id
+                WHERE pr.passenger_id = %s AND r.tenant_id = %s
+                LIMIT 1;
+            """, (passenger_id, tenant_id))
+            route = cur.fetchone()
+            if not route:
+                raise HTTPException(status_code=404, detail="Passageiro não associado a nenhuma rota.")
+            return route
     except psycopg2.Error as e:
         print(f"Erro na base de dados: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor.")
