@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../services/api_service.dart';
+import 'create_route_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -119,8 +120,20 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton:
           _userRole == 'SUPER_ADMIN'
               ? FloatingActionButton(
-                onPressed: () {
-                  // TODO: Navegar para a tela de criação de rota
+                onPressed: () async {
+                  // Esta é a lógica que faz o botão funcionar
+                  final result = await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const CreateRouteScreen(),
+                    ),
+                  );
+
+                  // Se voltarmos com 'true', atualizamos a lista de rotas
+                  if (result == true) {
+                    setState(() {
+                      _routesFuture = _apiService.getRoutes();
+                    });
+                  }
                 },
                 backgroundColor: Colors.amber,
                 child: const Icon(Icons.add),

@@ -30,7 +30,6 @@ class ApiService {
     }
   }
 
-  // Função para obter a lista de rotas
   Future<List<dynamic>> getRoutes() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
@@ -39,7 +38,7 @@ class ApiService {
       Uri.parse('$_routesBaseUrl/routes'),
       headers: <String, String>{
         'Content-Type': 'application/json; charset=UTF-8',
-        // 'Authorization': 'Bearer $token', // Vamos adicionar isto mais tarde quando implementarmos a segurança
+        // 'Authorization': 'Bearer $token', // Vamos adicionar isto mais tarde
       },
     );
 
@@ -47,6 +46,26 @@ class ApiService {
       return jsonDecode(response.body);
     } else {
       throw Exception('Falha ao carregar as rotas.');
+    }
+  }
+
+  // --- NOVA FUNÇÃO ---
+  Future<void> createRoute(String name, int driverId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+
+    final response = await http.post(
+      Uri.parse('$_routesBaseUrl/routes'),
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=UTF-8',
+        // 'Authorization': 'Bearer $token', // Vamos adicionar isto mais tarde
+      },
+      body: jsonEncode(<String, dynamic>{'name': name, 'driver_id': driverId}),
+    );
+
+    // O nosso backend retorna 200 OK para a criação de rota
+    if (response.statusCode != 200) {
+      throw Exception('Falha ao criar a rota.');
     }
   }
 }
