@@ -34,6 +34,7 @@ dependencies:
   # Adicione estas duas linhas
   http: ^1.2.1
   shared_preferences: ^2.2.3
+  jwt_decoder: ^2.0.1
 
   cupertino_icons: ^1.0.6
 

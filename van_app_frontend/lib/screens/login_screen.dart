@@ -1,6 +1,7 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
-import '../services/api_service.dart'; // Importar o nosso serviço de API
+import '../services/api_service.dart';
+import 'home_screen.dart'; // Importar a HomeScreen
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,30 +22,26 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final result = await _apiService.login(
-        _emailController.text,
-        _passwordController.text,
-      );
-      // Se o login for bem-sucedido, pode navegar para a próxima tela
-      print('Login bem-sucedido! Token: ${result['token']}');
-      // TODO: Navegar para a tela principal
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Login bem-sucedido, ${result['user']['name']}!'),
-        ),
-      );
+      await _apiService.login(_emailController.text, _passwordController.text);
+
+      // Navegar para a HomeScreen e remover a tela de login da pilha
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      }
     } catch (e) {
-      // Mostrar uma mensagem de erro
-      print('Erro no login: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao fazer login. Verifique as suas credenciais.'),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao fazer login: ${e.toString()}')),
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
