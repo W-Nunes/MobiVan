@@ -4,16 +4,13 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // URLs base para os nossos diferentes serviços
-  final String _routesBaseUrl =
-      "http://localhost:8000"; // Aponta para o routes-service
-  final String _authBaseUrl =
-      "http://localhost:3001"; // Aponta para o auth-service
-  final String _tripsBaseUrl =
-      "http://localhost:8001"; // Aponta para o trips-service
+  final String _ip = "10.0.0.179";
+
+  late final String _routesBaseUrl = "http://$_ip:8000";
+  late final String _authBaseUrl = "http://$_ip:3001";
+  late final String _tripsBaseUrl = "http://$_ip:8001";
 
   Future<Map<String, dynamic>> login(String email, String password) async {
-    // (Código existente - sem alterações)
     final response = await http.post(
       Uri.parse('$_authBaseUrl/login'),
       headers: <String, String>{
@@ -34,10 +31,6 @@ class ApiService {
   }
 
   Future<List<dynamic>> getRoutes() async {
-    // (Código existente - sem alterações)
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-
     final response = await http.get(
       Uri.parse('$_routesBaseUrl/routes'),
       headers: <String, String>{
@@ -53,10 +46,6 @@ class ApiService {
   }
 
   Future<void> createRoute(String name, int driverId) async {
-    // (Código existente - sem alterações)
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-
     final response = await http.post(
       Uri.parse('$_routesBaseUrl/routes'),
       headers: <String, String>{
@@ -70,7 +59,6 @@ class ApiService {
     }
   }
 
-  // --- NOVA FUNÇÃO ---
   Future<Map<String, dynamic>> getMyRoute(int passengerId) async {
     final response = await http.get(
       Uri.parse('$_routesBaseUrl/passengers/$passengerId/route'),
@@ -86,7 +74,6 @@ class ApiService {
     }
   }
 
-  // --- NOVA FUNÇÃO ---
   Future<void> confirmPresence(
     int passengerId,
     int routeId,

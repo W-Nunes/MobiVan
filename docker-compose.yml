@@ -1,10 +1,9 @@
 # docker-compose.yml
-# Versão ATUALIZADA com healthcheck para o PostgreSQL
+# Versão ATUALIZADA para expor as portas a todas as interfaces de rede.
 
 version: '3.8'
 
 services:
-  # --- BANCOS DE DADOS ---
   postgres:
     image: postgres:13-alpine
     container_name: van_postgres_db
@@ -17,8 +16,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
-    # --- NOVO: HEALTHCHECK ---
-    # Isto verifica se a base de dados está realmente pronta para aceitar ligações.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vanuser -d van_management_db"]
       interval: 5s
@@ -36,24 +33,21 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
-    # Pode adicionar um healthcheck para o Mongo também se desejar
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # --- MICROSSERVIÇOS PYTHON ---
   routes-service:
     build:
       context: ./backend/python/routes_service
     container_name: van_routes_service
     ports:
-      - "8000:8000"
+      - "0.0.0.0:8000:8000"
     volumes:
       - ./backend/python/routes_service:/app
     depends_on:
-      # --- ALTERADO: Espera pela saúde do serviço ---
       postgres:
         condition: service_healthy
     restart: on-failure
@@ -63,7 +57,7 @@ services:
       context: ./backend/python/trips_service
     container_name: van_trips_service
     ports:
-      - "8001:8000"
+      - "0.0.0.0:8001:8000"
     volumes:
       - ./backend/python/trips_service:/app
     depends_on:
@@ -76,7 +70,7 @@ services:
       context: ./backend/python/routing_service
     container_name: van_routing_service
     ports:
-      - "8002:8000"
+      - "0.0.0.0:8002:8000"
     volumes:
       - ./backend/python/routing_service:/app
     restart: on-failure
@@ -86,7 +80,7 @@ services:
       context: ./backend/python/payments_service
     container_name: van_payments_service
     ports:
-      - "8003:8000"
+      - "0.0.0.0:8003:8000"
     volumes:
       - ./backend/python/payments_service:/app
     depends_on:
@@ -94,13 +88,12 @@ services:
         condition: service_healthy
     restart: on-failure
 
-  # --- MICROSSERVIÇOS NODE.JS ---
   api-gateway:
     build:
       context: ./backend/nodejs/api_gateway
     container_name: van_api_gateway
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
     volumes:
       - ./backend/nodejs/api_gateway:/usr/src/app
       - /usr/src/app/node_modules
@@ -111,7 +104,7 @@ services:
       context: ./backend/nodejs/auth_service
     container_name: van_auth_service
     ports:
-      - "3001:3000"
+      - "0.0.0.0:3001:3000"
     volumes:
       - ./backend/nodejs/auth_service:/usr/src/app
       - /usr/src/app/node_modules
@@ -125,7 +118,7 @@ services:
       context: ./backend/nodejs/geolocation_service
     container_name: van_geolocation_service
     ports:
-      - "3002:3000"
+      - "0.0.0.0:3002:3000"
     volumes:
       - ./backend/nodejs/geolocation_service:/usr/src/app
       - /usr/src/app/node_modules
@@ -139,13 +132,12 @@ services:
       context: ./backend/nodejs/notifications_service
     container_name: van_notifications_service
     ports:
-      - "3003:3000"
+      - "0.0.0.0:3003:3000"
     volumes:
       - ./backend/nodejs/notifications_service:/usr/src/app
       - /usr/src/app/node_modules
     restart: on-failure
 
-# --- VOLUMES PERSISTENTES ---
 volumes:
   postgres_data:
   mongo_data:

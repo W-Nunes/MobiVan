@@ -35,6 +35,8 @@ dependencies:
   http: ^1.2.1
   shared_preferences: ^2.2.3
   jwt_decoder: ^2.0.1
+  google_maps_flutter: ^2.6.1
+  web_socket_channel: ^2.4.5
 
   cupertino_icons: ^1.0.6
 

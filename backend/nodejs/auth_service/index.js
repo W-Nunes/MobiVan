@@ -1,16 +1,14 @@
 // index.js
 const express = require('express');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken'); // Importamos a biblioteca JWT
+const jwt = require('jsonwebtoken');
 const { pool, testConnection } = require('./db');
 
 const app = express();
 const PORT = 3000;
-const JWT_SECRET = 'seu_segredo_super_secreto_aqui'; // ATENÇÃO: Mude isto para uma variável de ambiente em produção
+const JWT_SECRET = 'seu_segredo_super_secreto_aqui';
 
 app.use(express.json());
-
-// --- ROTAS ---
 
 app.get('/', (req, res) => {
   res.send('Olá, Mundo! Este é o serviço de Autenticação.');
@@ -48,42 +46,37 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Rota de Login de Utilizador
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  const tenant_id = 'cliente_alpha'; // O login também é por tenant
+  const tenant_id = 'cliente_alpha';
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email e palavra-passe são obrigatórios.' });
   }
 
   try {
-    // 1. Encontrar o utilizador pelo email e tenant_id
     const userQuery = 'SELECT * FROM users WHERE email = $1 AND tenant_id = $2';
     const result = await pool.query(userQuery, [email, tenant_id]);
     const user = result.rows[0];
 
     if (!user) {
-      return res.status(404).json({ error: 'Credenciais inválidas.' }); // Mensagem genérica por segurança
+      return res.status(404).json({ error: 'Credenciais inválidas.' });
     }
 
-    // 2. Comparar a palavra-passe enviada com o hash guardado
     const isMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!isMatch) {
-      return res.status(401).json({ error: 'Credenciais inválidas.' }); // Mensagem genérica por segurança
+      return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
-    // 3. Gerar o Token JWT
     const payload = {
       userId: user.id,
       role: user.role,
       tenantId: user.tenant_id,
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' }); // Token expira em 8 horas
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
 
-    // 4. Enviar o token de volta para o cliente
     res.json({
       message: 'Login bem-sucedido!',
       token: token,
@@ -101,7 +94,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// --- INICIALIZAÇÃO DO SERVIDOR ---
 app.listen(PORT, () => {
   console.log(`Serviço de Autenticação a correr na porta ${PORT}`);
   testConnection();

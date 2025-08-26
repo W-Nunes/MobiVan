@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../services/api_service.dart';
 import 'create_route_screen.dart';
+import 'map_screen.dart'; // Importar o novo ecrã
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,6 +16,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String? _userRole;
   int? _userId;
+  String? _token;
   final ApiService _apiService = ApiService();
 
   Future<List<dynamic>>? _routesFuture;
@@ -41,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _userRole = role ?? 'desconhecido';
       _userId = userId;
+      _token = token;
 
       if (_userRole == 'SUPER_ADMIN') {
         _routesFuture = _apiService.getRoutes();
@@ -51,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAdminDashboard() {
-    // (Código existente - sem alterações)
+    // (Código existente)
     return FutureBuilder<List<dynamic>>(
       future: _routesFuture,
       builder: (context, snapshot) {
@@ -136,6 +139,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              // BOTÃO PARA O MAPA
+              ElevatedButton.icon(
+                icon: const Icon(Icons.map),
+                label: const Text('VER MAPA EM TEMPO REAL'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                onPressed: () {
+                  if (_token != null) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder:
+                            (context) =>
+                                MapScreen(routeId: routeId, token: _token!),
+                      ),
+                    );
+                  }
+                },
+              ),
               const SizedBox(height: 32),
               Text(
                 'Confirmar presença para hoje:',
@@ -193,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDashboardByRole() {
-    // (Código existente - sem alterações)
+    // (Código existente)
     if (_userRole == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -211,7 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // (Código existente - sem alterações)
+    // (Código existente)
     return Scaffold(
       appBar: AppBar(
         title: Text('Painel Principal (${_userRole ?? ''})'),
