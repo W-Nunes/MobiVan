@@ -2,13 +2,15 @@
     <application
         android:label="van_app_frontend"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+
 
         <!--
           A chave de API deve estar AQUI, dentro da tag <application>.
         -->
         <meta-data android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyA5yiHVxKb2R9mHLIDyCPGBCO4X6Igjv_E"/>
+            android:value="AIzaSyDIgXPG0mtaC9AloyIYtLyDJgBoVXTd4qs"/>
 
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"

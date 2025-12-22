@@ -1,100 +1,104 @@
-// index.js
+// backend/nodejs/auth_service/index.js (ATUALIZADO COM LOGS E CONEXÃO REAL)
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { pool, testConnection } = require('./db');
+const { pool } = require('./db'); // Importa o pool configurado
+const cors = require('cors');
 
 const app = express();
-const PORT = 3000;
-const JWT_SECRET = 'seu_segredo_super_secreto_aqui';
-
+app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.send('Olá, Mundo! Este é o serviço de Autenticação.');
+// Configurações de Ambiente
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_standard';
+const FIXED_TENANT_ID = 'cliente_alpha'; // Consistência com os dados do Postgres
+
+// Rota de verificação de saúde (Health Check)
+app.get('/health-check', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    service: 'auth-service', 
+    timestamp: new Date().toISOString() 
+  });
 });
 
+// Rota de Registro
 app.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body;
-  const tenant_id = 'cliente_alpha';
-
-  if (!name || !email || !password || !role) {
-    return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
-  }
+  const { email, password, role } = req.body;
+  
+  console.log(`[REGISTER] Tentativa de registo para: ${email}`);
 
   try {
-    const saltRounds = 10;
-    const password_hash = await bcrypt.hash(password, saltRounds);
-
-    const newUserQuery = `
-      INSERT INTO users (name, email, password_hash, role, tenant_id)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, email, role, created_at;
-    `;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await pool.query(
+      'INSERT INTO users (email, password_hash, role, tenant_id) VALUES ($1, $2, $3, $4) RETURNING id, email, role',
+      [email, hashedPassword, role || 'driver', FIXED_TENANT_ID]
+    );
     
-    const values = [name, email, password_hash, role, tenant_id];
-    const result = await pool.query(newUserQuery, values);
-
-    res.status(201).json(result.rows[0]);
-
+    console.log(`[REGISTER] Utilizador criado com sucesso: ${email}`);
+    res.status(201).json(newUser.rows[0]);
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Este email já está em uso.' });
-    }
-    console.error('Erro ao registar utilizador:', err);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
+    console.error(`[REGISTER] Erro ao registar: ${err.message}`);
+    res.status(500).json({ error: 'Erro no servidor ao registar utilizador' });
   }
 });
 
+// Rota de Login
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  const tenant_id = 'cliente_alpha';
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email e palavra-passe são obrigatórios.' });
-  }
+  
+  console.log(`[LOGIN] >>> Nova requisição recebida para: ${email}`);
 
   try {
-    const userQuery = 'SELECT * FROM users WHERE email = $1 AND tenant_id = $2';
-    const result = await pool.query(userQuery, [email, tenant_id]);
-    const user = result.rows[0];
-
-    if (!user) {
-      return res.status(404).json({ error: 'Credenciais inválidas.' });
+    // Busca o utilizador no banco de dados
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    
+    if (userResult.rows.length === 0) {
+      console.log(`[LOGIN] XXX Falha: Utilizador não encontrado (${email})`);
+      return res.status(400).json({ error: 'Credenciais inválidas' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+    const user = userResult.rows[0];
+    console.log(`[LOGIN] OK: Utilizador localizado. Verificando password...`);
 
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Credenciais inválidas.' });
+    // Compara a password com o hash
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    
+    if (!validPassword) {
+      console.log(`[LOGIN] XXX Falha: Password incorreta para ${email}`);
+      return res.status(400).json({ error: 'Credenciais inválidas' });
     }
 
-    const payload = {
+    // Geração do Token JWT
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        role: user.role, 
+        tenantId: user.tenant_id 
+      },
+      JWT_SECRET,
+      { expiresIn: '2h' }
+    );
+
+    console.log(`[LOGIN] SUCCESS: Login realizado com sucesso para ${email} (ID: ${user.id})`);
+    
+    res.json({ 
+      token, 
+      role: user.role, 
       userId: user.id,
-      role: user.role,
-      tenantId: user.tenant_id,
-    };
-
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
-
-    res.json({
-      message: 'Login bem-sucedido!',
-      token: token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
+      tenantId: user.tenant_id
     });
 
   } catch (err) {
-    console.error('Erro no login:', err);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
+    console.error(`[LOGIN] CRITICAL ERROR: ${err.message}`);
+    res.status(500).json({ error: 'Erro interno no serviço de autenticação' });
   }
 });
 
+const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`Serviço de Autenticação a correr na porta ${PORT}`);
-  testConnection();
+  console.log('---------------------------------------------------------');
+  console.log(`Serviço de Autenticação ativo na porta ${PORT}`);
+  console.log(`Tenant ID configurado: ${FIXED_TENANT_ID}`);
+  console.log('---------------------------------------------------------');
 });
