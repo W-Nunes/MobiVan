@@ -24,22 +24,40 @@ app.get('/health-check', (req, res) => {
 
 // Rota de Registro
 app.post('/register', async (req, res) => {
-  const { email, password, role } = req.body;
-  
-  console.log(`[REGISTER] Tentativa de registo para: ${email}`);
+  // 1. Recebemos o 'name' do JSON
+  const { name, email, password, role, address, latitude, longitude } = req.body;
+  const tenant_id = 'cliente_alpha';
+
+  console.log(`[REGISTER] Criando: ${name} (${email}) | Role: ${role}`);
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 2. Query ATUALIZADA incluindo a coluna 'name'
     const newUser = await pool.query(
-      'INSERT INTO users (email, password_hash, role, tenant_id) VALUES ($1, $2, $3, $4) RETURNING id, email, role',
-      [email, hashedPassword, role || 'driver', FIXED_TENANT_ID]
+      `INSERT INTO users
+      (name, email, password_hash, role, tenant_id, address, latitude, longitude)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id, name, email, role`,
+      [
+        name, // $1
+        email, // $2
+        hashedPassword, // $3
+        role || 'driver', // $4
+        tenant_id, // $5
+        address || null, // $6
+        latitude || null, // $7
+        longitude || null // $8
+      ]
     );
-    
-    console.log(`[REGISTER] Utilizador criado com sucesso: ${email}`);
+
+    console.log(`[REGISTER] Sucesso! ID: ${newUser.rows[0].id}`);
     res.status(201).json(newUser.rows[0]);
+
   } catch (err) {
-    console.error(`[REGISTER] Erro ao registar: ${err.message}`);
-    res.status(500).json({ error: 'Erro no servidor ao registar utilizador' });
+    console.error(`[REGISTER] Erro Crítico: ${err.message}`);
+    // Retornamos o erro exato para facilitar o debug no Postman
+    res.status(500).json({ error: err.message });
   }
 });
 

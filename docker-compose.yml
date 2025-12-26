@@ -34,7 +34,8 @@ services:
       - mongo_data:/data/db
     restart: unless-stopped
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
+      # ADICIONEI: -u vanmongouser -p vanmongopassword --authenticationDatabase admin
+      test: echo 'db.runCommand("ping").ok' | mongo -u vanmongouser -p vanmongopassword --authenticationDatabase admin localhost:27017/test --quiet
       interval: 5s
       timeout: 5s
       retries: 5

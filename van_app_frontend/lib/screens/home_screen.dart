@@ -1,10 +1,10 @@
-// lib/screens/home_screen.dart
+// lib/screens/home_screen.dart (ATUALIZADO COM MENSAGEM DE ESPERA)
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../services/api_service.dart';
 import 'create_route_screen.dart';
-import 'map_screen.dart'; // Importar o novo ecrã
+import 'map_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,7 +20,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final ApiService _apiService = ApiService();
 
   Future<List<dynamic>>? _routesFuture;
-  Future<Map<String, dynamic>>? _myRouteFuture;
+  // MUDANÇA 1: Aceita null (?) para quando não tiver rota
+  Future<Map<String, dynamic>?>? _myRouteFuture;
 
   @override
   void initState() {
@@ -49,12 +50,43 @@ class _HomeScreenState extends State<HomeScreen> {
         _routesFuture = _apiService.getRoutes();
       } else if (_userRole == 'PASSAGEIRO' && _userId != null) {
         _myRouteFuture = _apiService.getMyRoute(_userId!);
+      } else if (_userRole == 'MOTORISTA' && _userId != null) {
+        _myRouteFuture = _apiService.getDriverRoute(_userId!);
       }
     });
   }
 
+  // --- MUDANÇA 2: O WIDGET NOVO ---
+  Widget _buildNoRouteMessage() {
+    return Center(
+      child: Card(
+        margin: const EdgeInsets.all(24),
+        elevation: 4,
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.access_time, size: 60, color: Colors.orange),
+              SizedBox(height: 16),
+              Text(
+                "Aguardando Vinculação",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Você ainda não foi vinculado a uma rota escolar.\n\nPor favor, entre em contato com o administrador da sua instituição para regularizar o cadastro.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAdminDashboard() {
-    // (Código existente)
     return FutureBuilder<List<dynamic>>(
       future: _routesFuture,
       builder: (context, snapshot) {
@@ -79,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: Text('Motorista ID: ${route['driver_id']}'),
               trailing: const Icon(Icons.arrow_forward_ios),
               onTap: () {
-                // TODO: Navegar para a tela de detalhes da rota
+                // TODO: Detalhes da rota para admin
               },
             );
           },
@@ -89,26 +121,150 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDriverDashboard() {
-    return const Center(
-      child: Text('Painel do Motorista', style: TextStyle(fontSize: 24)),
-    );
-  }
-
-  // --- PAINEL DO PASSAGEIRO ATUALIZADO ---
-  Widget _buildPassengerDashboard() {
-    return FutureBuilder<Map<String, dynamic>>(
+    return FutureBuilder<Map<String, dynamic>?>(
       future: _myRouteFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
           return Center(child: Text('Erro: ${snapshot.error}'));
-        } else if (!snapshot.hasData) {
+        } else if (!snapshot.hasData || snapshot.data == null) {
           return const Center(
-            child: Text('Não está associado a nenhuma rota.'),
+            child: Text('Você não está vinculado a nenhuma rota.'),
           );
         }
 
+        final route = snapshot.data!;
+        final routeId = route['id'];
+
+        return Column(
+          children: [
+            Card(
+              margin: const EdgeInsets.all(16.0),
+              color: Colors.amber.shade50,
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      'Sua Rota: ${route['name']}',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.navigation),
+                      label: const Text('INICIAR PERCURSO (MAPA)'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 30,
+                          vertical: 15,
+                        ),
+                      ),
+                      onPressed: () {
+                        if (_token != null) {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder:
+                                  (context) => MapScreen(
+                                routeId: routeId,
+                                token: _token!,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(thickness: 1),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                'Passageiros Confirmados (Hoje)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<List<dynamic>>(
+                future: _apiService.getTodayConfirmations(routeId),
+                builder: (context, snapPassengers) {
+                  if (snapPassengers.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  } else if (snapPassengers.hasError) {
+                    return Center(
+                      child: Text(
+                        'Erro ao buscar lista: ${snapPassengers.error}',
+                      ),
+                    );
+                  } else if (!snapPassengers.hasData ||
+                      snapPassengers.data!.isEmpty) {
+                    return const Center(
+                      child: Text('Nenhum passageiro confirmou ainda.'),
+                    );
+                  }
+
+                  final passengers = snapPassengers.data!;
+                  return ListView.builder(
+                    itemCount: passengers.length,
+                    itemBuilder: (context, index) {
+                      final p = passengers[index];
+                      final status = p['status'];
+                      Color statusColor;
+                      IconData statusIcon;
+
+                      if (status == 'CONFIRMED') {
+                        statusColor = Colors.green;
+                        statusIcon = Icons.check_circle;
+                      } else if (status == 'CANCELLED') {
+                        statusColor = Colors.red;
+                        statusIcon = Icons.cancel;
+                      } else {
+                        statusColor = Colors.grey;
+                        statusIcon = Icons.help_outline;
+                      }
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: statusColor.withOpacity(0.2),
+                          child: Icon(statusIcon, color: statusColor),
+                        ),
+                        title: Text(p['passenger_name']),
+                        subtitle: Text('Status: $status'),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- MUDANÇA 3: PAINEL ATUALIZADO ---
+  Widget _buildPassengerDashboard() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _myRouteFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(child: Text('Erro: ${snapshot.error}'));
+        }
+
+        // SE O DADO FOR NULO (API RETORNOU 404/NULL), MOSTRA MENSAGEM
+        if (snapshot.data == null) {
+          return _buildNoRouteMessage();
+        }
+
+        // SE TIVER DADOS, MOSTRA O PAINEL NORMAL
         final route = snapshot.data!;
         final routeId = route['id'];
 
@@ -140,7 +296,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              // BOTÃO PARA O MAPA
               ElevatedButton.icon(
                 icon: const Icon(Icons.map),
                 label: const Text('VER MAPA EM TEMPO REAL'),
@@ -155,7 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(
                         builder:
                             (context) =>
-                                MapScreen(routeId: routeId, token: _token!),
+                            MapScreen(routeId: routeId, token: _token!),
                       ),
                     );
                   }
@@ -218,7 +373,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDashboardByRole() {
-    // (Código existente)
     if (_userRole == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -236,7 +390,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // (Código existente)
     return Scaffold(
       appBar: AppBar(
         title: Text('Painel Principal (${_userRole ?? ''})'),
@@ -244,24 +397,24 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: _buildDashboardByRole(),
       floatingActionButton:
-          _userRole == 'SUPER_ADMIN'
-              ? FloatingActionButton(
-                onPressed: () async {
-                  final result = await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const CreateRouteScreen(),
-                    ),
-                  );
-                  if (result == true) {
-                    setState(() {
-                      _routesFuture = _apiService.getRoutes();
-                    });
-                  }
-                },
-                backgroundColor: Colors.amber,
-                child: const Icon(Icons.add),
-              )
-              : null,
+      _userRole == 'SUPER_ADMIN'
+          ? FloatingActionButton(
+        onPressed: () async {
+          final result = await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const CreateRouteScreen(),
+            ),
+          );
+          if (result == true) {
+            setState(() {
+              _routesFuture = _apiService.getRoutes();
+            });
+          }
+        },
+        backgroundColor: Colors.amber,
+        child: const Icon(Icons.add),
+      )
+          : null,
     );
   }
 }

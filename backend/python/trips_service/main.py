@@ -40,6 +40,9 @@ class ConfirmationDetails(BaseModel):
     passenger_id: int
     passenger_name: str
     status: str
+    latitude: float = None  # Novo campo opcional
+    longitude: float = None # Novo campo opcional
+    address: str = None     # Novo campo opcional
 
 # --- ROTAS ---
 
@@ -89,7 +92,7 @@ def confirm_presence(confirmation: ConfirmationUpdate):
 
 @app.get("/trips/today/{route_id}/confirmations", response_model=List[ConfirmationDetails])
 def get_today_confirmations(route_id: int):
-    """Obtém a lista de confirmações de passageiros para uma rota no dia de hoje."""
+    """Obtém a lista de confirmações. Se não houver viagem, retorna PENDING para todos."""
     tenant_id = "cliente_alpha"
     today = date.today()
     conn = None
@@ -97,23 +100,39 @@ def get_today_confirmations(route_id: int):
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Primeiro, encontramos a viagem de hoje para esta rota
+            # 1. Tenta achar a viagem de hoje
             cur.execute(
                 "SELECT id FROM trips WHERE route_id = %s AND trip_date = %s AND tenant_id = %s",
                 (route_id, today, tenant_id)
             )
             trip = cur.fetchone()
-            if not trip:
-                # Se não houver viagem, significa que ninguém confirmou ainda, então retornamos uma lista vazia.
-                return []
-            
-            trip_id = trip['id']
 
-            # Agora, obtemos todos os passageiros da rota e o seu estado de confirmação
+            if not trip:
+                # CENÁRIO A: Ninguém confirmou ainda.
+                # Buscamos apenas os passageiros da rota e definimos status como PENDING
+                cur.execute("""
+                    SELECT
+                        u.id as passenger_id,
+                        u.name as passenger_name,
+                        u.latitude,
+                        u.longitude,
+                        u.address,
+                        'PENDING' as status
+                    FROM users u
+                    JOIN passenger_routes pr ON u.id = pr.passenger_id
+                    WHERE pr.route_id = %s AND u.role = 'PASSAGEIRO' AND u.tenant_id = %s
+                """, (route_id, tenant_id))
+                return cur.fetchall()
+
+            # CENÁRIO B: A viagem já existe (alguém confirmou).
+            trip_id = trip['id']
             cur.execute("""
                 SELECT
                     u.id as passenger_id,
                     u.name as passenger_name,
+                    u.latitude,
+                    u.longitude,
+                    u.address,
                     COALESCE(tc.status, 'PENDING') as status
                 FROM users u
                 JOIN passenger_routes pr ON u.id = pr.passenger_id

@@ -204,3 +204,27 @@ def get_passenger_route(passenger_id: int):
     finally:
         if conn:
             conn.close()
+
+# Adicionar ao routes_service/main.py
+@app.get("/drivers/{driver_id}/route", response_model=RouteResponse)
+def get_driver_route(driver_id: int):
+    """Obtém a rota associada a um motorista."""
+    tenant_id = "cliente_alpha"
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id, name, driver_id, tenant_id
+                FROM routes
+                WHERE driver_id = %s AND tenant_id = %s
+                LIMIT 1;
+            """, (driver_id, tenant_id))
+            route = cur.fetchone()
+            if not route:
+                raise HTTPException(status_code=404, detail="Motorista não possui rota atribuída.")
+            return route
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail="Erro ao procurar rota do motorista.")
+    finally:
+        if conn: conn.close()
