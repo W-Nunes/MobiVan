@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "248850397318",
+    "project_id": "voudevan-3df9e",
+    "storage_bucket": "voudevan-3df9e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:248850397318:android:542b275eba279fbfef3907",
+        "android_client_info": {
+          "package_name": "com.voudevan.van_app_frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzajRxjyDluo75DU4oOhHZWRT0mircB1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

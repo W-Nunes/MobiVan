@@ -1,10 +1,9 @@
-// lib/services/api_service.dart (CORRIGIDO PARA ACEITAR 404)
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // IP da sua máquina na rede Wi-Fi
+  // SEU IP LOCAL (Mantenha atualizado se o roteador reiniciar)
   final String _ip = "10.0.0.179";
 
   // Endereços dos microserviços
@@ -24,6 +23,7 @@ class ApiService {
     return headers;
   }
 
+  // --- AUTENTICAÇÃO ---
   Future<Map<String, dynamic>> login(String email, String password) async {
     final response = await http.post(
       Uri.parse('$_authBaseUrl/login'),
@@ -48,6 +48,7 @@ class ApiService {
     }
   }
 
+  // --- ROTAS (GERAL) ---
   Future<List<dynamic>> getRoutes() async {
     final headers = await _getHeaders();
     final response = await http.get(
@@ -75,7 +76,7 @@ class ApiService {
     }
   }
 
-  // --- MUDANÇA CRÍTICA AQUI ---
+  // --- PASSAGEIRO ---
   Future<Map<String, dynamic>?> getMyRoute(int passengerId) async {
     final headers = await _getHeaders();
     final response = await http.get(
@@ -86,7 +87,6 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else if (response.statusCode == 404) {
-      // SUCESSO SILENCIOSO: Retorna null se não tiver rota
       return null;
     } else {
       throw Exception(
@@ -111,13 +111,31 @@ class ApiService {
       }),
     );
 
-    // Aceita 200 (OK) ou 201 (Created)
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw Exception('Falha ao confirmar presença: ${response.body}');
     }
   }
 
-  // --- MÉTODOS DO MOTORISTA ---
+  // --- PASSAGEIRO: RASTREAMENTO (NOVO) ---
+  // Busca a localização atual da van
+  Future<Map<String, dynamic>?> getDriverLocation(int routeId) async {
+    final url = Uri.parse('$_tripsBaseUrl/trips/$routeId/location');
+    try {
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        // 404 é normal se a van não começou a andar ainda
+        return null;
+      }
+    } catch (e) {
+      print("Erro ao buscar GPS da van: $e");
+      return null;
+    }
+  }
+
+  // --- MOTORISTA ---
   Future<Map<String, dynamic>> getDriverRoute(int driverId) async {
     final headers = await _getHeaders();
     final response = await http.get(
@@ -146,7 +164,7 @@ class ApiService {
     }
   }
 
-  // --- MÉTODO DE OTIMIZAÇÃO ---
+  // --- OTIMIZAÇÃO DE ROTA ---
   Future<Map<String, dynamic>> getOptimizedRoute(Map<String, dynamic> driverLocation, List<dynamic> passengers) async {
     final headers = await _getHeaders();
 
@@ -170,8 +188,55 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
-      // Retorna vazio em caso de erro para não travar o mapa
       return {"optimize_order": [], "total_distance_km": 0.0};
+    }
+  }
+
+  // --- MÉTODOS DO MAPA DO MOTORISTA ---
+
+  // 1. Confirma embarque (Botão Deslizante)
+  Future<bool> confirmPassengerBoarding(int passengerId, int routeId) async {
+    final url = Uri.parse('$_tripsBaseUrl/confirmations');
+    final headers = await _getHeaders();
+
+    try {
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: jsonEncode({
+          "passenger_id": passengerId,
+          "route_id": routeId,
+          "status": "CONFIRMED"
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print("✅ Embarque confirmado no servidor!");
+        return true;
+      } else {
+        print("❌ Erro ao confirmar embarque: ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("❌ Erro de conexão: $e");
+      return false;
+    }
+  }
+
+  // 2. Envia GPS do Motorista em tempo real
+  Future<void> sendDriverLocation(int routeId, double lat, double long) async {
+    final url = Uri.parse('$_tripsBaseUrl/trips/$routeId/location');
+    try {
+      await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "latitude": lat,
+          "longitude": long
+        }),
+      );
+    } catch (e) {
+      print("Erro silencioso ao enviar GPS: $e");
     }
   }
 }

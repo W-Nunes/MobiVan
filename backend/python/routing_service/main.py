@@ -1,9 +1,9 @@
 # backend/python/routing_service/main.py
 import httpx
 import math
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 app = FastAPI()
 
@@ -23,8 +23,9 @@ class RouteRequest(BaseModel):
 class RouteResponse(BaseModel):
     optimized_order: List[Location] # A lista de passageiros na ordem certa
     total_distance_km: float        # Distância real por estrada
-    total_duration_minutes: float   # Tempo estimado (com trânsito padrão)
-    geometry: Dict[str, Any]        # O GeoJSON para o Flutter desenhar a linha
+    total_duration_minutes: float   # Tempo estimado
+    geometry: Dict[str, Any]        # O desenho da linha (GeoJSON)
+    steps: List[Dict[str, Any]] = [] # NOVA LISTA: Instruções de navegação (Vire à direita...)
 
 # --- LÓGICA AUXILIAR ---
 
@@ -43,8 +44,8 @@ def calculate_haversine(lat1, lon1, lat2, lon2):
 
 async def get_osrm_route(ordered_locations: List[Location]):
     """
-    Consulta a API pública do OSRM para obter o trajeto real de carro.
-    NOTA: O OSRM usa a ordem Longitude,Latitude.
+    Consulta a API pública do OSRM para obter o trajeto real.
+    Agora solicita também os STEPS (passo a passo).
     """
     if len(ordered_locations) < 2:
         return None
@@ -52,21 +53,16 @@ async def get_osrm_route(ordered_locations: List[Location]):
     # Formata coordenadas: "lon,lat;lon,lat;..."
     coords_string = ";".join([f"{loc.longitude},{loc.latitude}" for loc in ordered_locations])
 
-    # URL da API Demo (Para produção, recomenda-se hospedar seu próprio container OSRM)
-    url = f"http://router.project-osrm.org/route/v1/driving/{coords_string}?overview=full&geometries=geojson"
+    # URL OSRM: Adicionado &steps=true
+    url = f"http://router.project-osrm.org/route/v1/driving/{coords_string}?overview=full&geometries=geojson&steps=true"
 
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, timeout=10.0)
-            response.raise_for_status()
-            data = response.json()
-            if "routes" in data and len(data["routes"]) > 0:
-                route = data["routes"][0]
-                return {
-                    "distance_meters": route["distance"],
-                    "duration_seconds": route["duration"],
-                    "geometry": route["geometry"]
-                }
+            if response.status_code == 200:
+                data = response.json()
+                if "routes" in data and len(data["routes"]) > 0:
+                    return data["routes"][0]
         except Exception as e:
             print(f"Erro ao conectar com OSRM: {e}")
             return None
@@ -78,30 +74,26 @@ async def get_osrm_route(ordered_locations: List[Location]):
 def read_root():
     return {"message": "Serviço de Roteirização Inteligente Ativo 🚀"}
 
-@app.get("/")
-def read_root():
-    return {"message": "Serviço de Roteirização Inteligente Ativo 🚀"}
-
 @app.post("/optimize", response_model=RouteResponse)
 async def optimize_route(request: RouteRequest):
     """
-    1. Define a melhor ordem de parada (Algoritmo Vizinho Mais Próximo).
-    2. Calcula a rota real nessa ordem usando OSRM.
+    1. Define a melhor ordem (Vizinho Mais Próximo).
+    2. Calcula a rota real + instruções de navegação usando OSRM.
     """
     if not request.passengers:
         return RouteResponse(
             optimized_order=[],
             total_distance_km=0.0,
             total_duration_minutes=0.0,
-            geometry={}
+            geometry={},
+            steps=[]
         )
 
     # --- PASSO 1: ORDENAÇÃO (Seu algoritmo original) ---
     unvisited = request.passengers.copy()
     current_location = request.driver_start
-    optimized_path = [] # Lista final de passageiros ordenados
+    optimized_path = []
 
-    # Algoritmo Greedy (Vizinho mais próximo)
     while unvisited:
         nearest_passenger = None
         min_dist = float('inf')
@@ -120,8 +112,7 @@ async def optimize_route(request: RouteRequest):
             current_location = nearest_passenger
             unvisited.remove(nearest_passenger)
 
-    # --- PASSO 2: ROTA REAL (OSRM) ---
-    # Montamos a lista completa: [Motorista] + [Passageiros Ordenados]
+    # --- PASSO 2: ROTA REAL + INSTRUÇÕES (OSRM) ---
     full_route_points = [request.driver_start] + optimized_path
 
     osrm_data = await get_osrm_route(full_route_points)
@@ -129,18 +120,33 @@ async def optimize_route(request: RouteRequest):
     real_distance_km = 0.0
     real_duration_min = 0.0
     route_geometry = {}
+    steps_list = []
 
     if osrm_data:
-        real_distance_km = round(osrm_data["distance_meters"] / 1000, 2)
-        real_duration_min = round(osrm_data["duration_seconds"] / 60, 0)
+        real_distance_km = round(osrm_data["distance"] / 1000, 2)
+        real_duration_min = round(osrm_data["duration"] / 60, 0)
         route_geometry = osrm_data["geometry"]
+
+        # --- EXTRAÇÃO DAS MANOBRAS (STEPS) ---
+        # O OSRM divide a rota em "legs" (pernas entre paradas). Juntamos todas.
+        if "legs" in osrm_data:
+            for leg in osrm_data["legs"]:
+                for step in leg.get("steps", []):
+                    # Formatamos apenas o necessário para o Flutter
+                    steps_list.append({
+                        "instruction": step.get("maneuver", {}).get("type", "move"), # ex: turn, roundabout
+                        "modifier": step.get("maneuver", {}).get("modifier", ""), # ex: left, right
+                        "name": step.get("name", ""), # Nome da rua
+                        "location": step.get("maneuver", {}).get("location", [0,0]),
+                        "distance": step.get("distance", 0)
+                    })
     else:
-        # Fallback: Se o OSRM falhar, retornamos sem geometria e com distância aproximada
-        print("Aviso: OSRM falhou ou indisponível. Retornando dados básicos.")
+        print("Aviso: OSRM falhou ou indisponível.")
 
     return RouteResponse(
         optimized_order=optimized_path,
         total_distance_km=real_distance_km,
         total_duration_minutes=real_duration_min,
-        geometry=route_geometry
+        geometry=route_geometry,
+        steps=steps_list # Enviando as instruções para o painel preto
     )

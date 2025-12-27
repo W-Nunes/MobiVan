@@ -30,6 +30,11 @@ def get_db_connection():
         print(f"❌ Erro ao conectar à base de dados: {e}")
         raise
 
+# Novo modelo para receber a localização
+class DriverLocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+
 # --- Modelos de Dados (Pydantic) ---
 class ConfirmationUpdate(BaseModel):
     passenger_id: int
@@ -146,6 +151,67 @@ def get_today_confirmations(route_id: int):
     except psycopg2.Error as e:
         print(f"Erro na base de dados: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+    finally:
+        if conn:
+            conn.close()
+
+@app.post("/trips/{route_id}/location")
+def update_driver_location(route_id: int, location: DriverLocationUpdate):
+    """Atualiza a localização atual do motorista na viagem de hoje."""
+    tenant_id = "cliente_alpha"
+    today = date.today()
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Atualiza apenas se a viagem de hoje existir
+            cur.execute("""
+                UPDATE trips
+                SET current_lat = %s, current_long = %s
+                WHERE route_id = %s AND trip_date = %s AND tenant_id = %s
+            """, (location.latitude, location.longitude, route_id, today, tenant_id))
+
+            conn.commit()
+            return {"message": "Localização atualizada com sucesso"}
+
+    except psycopg2.Error as e:
+        print(f"Erro no banco: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao atualizar localização")
+    finally:
+        if conn:
+            conn.close()
+
+@app.get("/trips/{route_id}/location")
+def get_driver_location(route_id: int):
+    """Retorna a última localização conhecida do motorista."""
+    tenant_id = "cliente_alpha"
+    today = date.today()
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT current_lat, current_long
+                FROM trips
+                WHERE route_id = %s AND trip_date = %s AND tenant_id = %s
+            """, (route_id, today, tenant_id))
+
+            location = cur.fetchone()
+
+            if not location or location['current_lat'] is None:
+                # Se não tiver localização ainda, retorna 404 ou null
+                raise HTTPException(status_code=404, detail="Motorista ainda não iniciou o trajeto")
+
+            return {
+                "latitude": location['current_lat'],
+                "longitude": location['current_long']
+            }
+
+    except psycopg2.Error as e:
+        print(f"Erro no banco: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao buscar localização")
     finally:
         if conn:
             conn.close()

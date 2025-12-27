@@ -15,6 +15,12 @@ dependencies:
   shared_preferences: ^2.2.3
   jwt_decoder: ^2.0.1
   web_socket_channel: ^2.4.5
+  geolocator: ^10.1.0  # Para pegar o GPS real
+  action_slider: ^0.7.0 # Para o botão de confirmar embarque estilo Uber
+  flutter_compass: ^0.8.0
+  firebase_core: ^2.24.2
+  firebase_messaging: ^14.7.9 # Para notificações
+
 
   # --- CORREÇÃO AQUI: Trocamos Google Maps por Flutter Map ---
   flutter_map: ^6.0.0       # Necessário para o MapScreen
